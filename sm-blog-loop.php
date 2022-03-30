@@ -21,22 +21,44 @@ if (!function_exists('add_sm_blog_loop_shortcode')) {
     {
 
         $a = shortcode_atts(array(
+            'grid_type'             => 'grid_filter',
             'extra_class'           => '',
             'post__in'              => '',
+            'post__not_in'          => '',
             'orderby'               => 'menu_order',
             'order'                 =>  'ASC',
             'posts_per_page'        => -1,
             'blog_cat'              => '',
             'blog_tag'              => '',
+            'blog_tag_exclude'      => '',
             'show_related'          => false,
             'hide_filter'           => false
         ), $atts);
+
 
         // ! Pass shortcode parameters to variables to be used in WP_Query
         $post__in = [];
         if ($a['post__in']) {
             foreach (explode(',', $a['post__in']) as $post_id) {
                 array_push($post__in, $post_id);
+            }
+        }
+        $post__not_in = [];
+        if ($a['post__not_in']) {
+            foreach (explode(',', $a['post__not_in']) as $post_id) {
+                array_push($post__not_in, $post_id);
+            }
+        }
+        $tag__in = [];
+        if ($a['blog_tag']) {
+            foreach (explode(',', $a['blog_tag']) as $post_id) {
+                array_push($tag__in, $post_id);
+            }
+        }
+        $tag__not_in = [];
+        if ($a['blog_tag_exclude']) {
+            foreach (explode(',', $a['blog_tag_exclude']) as $post_id) {
+                array_push($tag__not_in, $post_id);
             }
         }
 
@@ -58,6 +80,8 @@ if (!function_exists('add_sm_blog_loop_shortcode')) {
 
                 if ($current_query->post_type === 'post' && $a['show_related']) {
                     $current_cats = get_the_category($current_query->ID);
+                    
+                    array_push($post__not_in, get_the_ID());
 
                     foreach ($current_cats as $cat) {
                         array_push($terms_id, $cat->term_id);
@@ -80,10 +104,15 @@ if (!function_exists('add_sm_blog_loop_shortcode')) {
             }
         }
 
+        $search_query = '';
+        if (is_search()) {
+            $search_query = get_search_query();
+        }
+
         // ! Create Filter
         $blog_filter_html = '';
         $blog_filter_cats = '';
-        if ($category_filter && !$post__in && !$a['blog_tag'] && !$a['hide_filter']) {
+        if ($category_filter && !$post__in && !$a['hide_filter']) {
             $a['extra_class'] = $a['extra_class'] . ' sm_has-filter';
 
             foreach ($category_filter as $cat_id) {
@@ -104,12 +133,15 @@ if (!function_exists('add_sm_blog_loop_shortcode')) {
         // Setup custom query
         $args = array(
             'post__in'              => $post__in,
+            'post__not_in'          => $post__not_in,
             'post_type'             => 'post',
             'status'                => 'publish',
+            's'                     => $search_query,
             'orderby'               => $a['menu_order'],
             'order'                 => $a['ASC'],
             'posts_per_page'        => $a['posts_per_page'],
-            'tag__in'               => $a['blog_tag'],
+            'tag__in'               => $tag__in,
+            'tag__not_in'           => $tag__not_in,
             'tax_query'             => array(array(
                 'taxonomy' => 'category', // The taxonomy name
                 'field'    => 'term_id', // Type of field ('term_id', 'slug', 'name' or 'term_taxonomy_id')
@@ -129,7 +161,7 @@ if (!function_exists('add_sm_blog_loop_shortcode')) {
                 $post_categories_string = $post_categories_string . str_replace(' ', '', $post_category->name) . ' ';
 
                 $post_categories_html = $post_categories_html . '
-                    <h4><a href="/' . $post_category->slug . '">' . $post_category->name . '</a></h4>
+                    <h4 class="frederica_button"><a href="/' . $post_category->slug . '">' . $post_category->name . '</a></h4>
                 ';
             }
 
@@ -158,14 +190,22 @@ if (!function_exists('add_sm_blog_loop_shortcode')) {
 
 
         // ! Returned HTML
-        $html = '<div class="sm_blog-loop ' . $a['extra_class'] . '">
-                        <div class="sm_blog-loop--filter">
-                            ' . $blog_filter_html . '
-                        </div>
-                        <div class="sm_blog-loop--grid">
-                            ' . $blog_items . '
-                        </div>
-                    </div>';
+        if ($a['grid_type'] === 'grid_filter') {
+            
+            $html = '<div class="sm_blog-loop ' . $a['extra_class'] . '">
+                            <div class="sm_blog-loop--filter">
+                                ' . $blog_filter_html . '
+                            </div>
+                            <div class="sm_blog-loop--grid">
+                                ' . $blog_items . '
+                            </div>
+                        </div>';
+        } elseif ($a['grid_type'] === 'frederica_hero') {
+            // include 'templates/frederica_hero.php';
+            $html = '<div class="sm_blog-hero '.$a['extra_class'].'">
+                    ' . frederica_hero($loop) . '
+                </div>';
+        }
 
         // Enqueue
         if (!wp_style_is('sm_blog_loop-css', 'enqueued')) {
@@ -208,3 +248,47 @@ if (!function_exists('sm_blog_loop_enqueue_scripts_elementor_editor')) {
 // Add Action elementor/preview/enqueue_styles 
 add_action('elementor/preview/enqueue_styles', 'sm_blog_loop_enqueue_styles_elementor_editor');
 add_action('elementor/preview/enqueue_scripts', 'sm_blog_loop_enqueue_scripts_elementor_editor');
+
+
+
+// ! HTML Types - grid_type
+function frederica_hero($loop)
+{
+
+    // var_dump($options);
+    // var_dump($loop->posts);
+
+
+    $frederica_hero_html = '';
+    foreach ($loop->posts as $post) {
+
+        // Get post categories
+        $post_categories_html = '';
+        foreach (get_the_category($post->ID) as $post_category) {
+            // var_dump($post_category);
+
+            $post_categories_html = $post_categories_html . '
+                    <h4 class="sm_blog-hero--category frederica_button"><a href="/' . $post_category->slug . '">' . $post_category->name . '</a></h4>
+                ';
+        }
+
+
+        $frederica_hero_html = $frederica_hero_html . '
+            <article class="sm_blog-hero--article">
+                <div class="sm_blog-hero--info">
+                    ' . $post_categories_html . '
+                    <h2><a href="/' . $post->post_name . '" class="sm_blog-hero--title">' . $post->post_title . '</a></h2>
+                </div>
+                
+                <div class="sm_blog-hero--image">
+                    <a href="/' . $post->post_name . '">
+                        ' . get_the_post_thumbnail($post->ID, 'large') . '
+                    </a>
+                </div>
+
+            </article>
+        ';
+    }
+
+    return $frederica_hero_html;
+}
